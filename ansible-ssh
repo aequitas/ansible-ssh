@@ -25,6 +25,8 @@ def main(argv):
         usage='%prog <host-pattern>',
         runtask_opts=True,
     )
+    parser.add_option("-l", dest="login_name", help="login_name")
+    parser.add_option("-r", dest="retry", help="Retry until connected.")
     options, args = parser.parse_args()
     if len(args) == 1:
         pattern =  args[0]
@@ -32,9 +34,16 @@ def main(argv):
         pattern = ''
 
     # Load the inventory and find hosts matching the specified pattern.
-    inventory = Inventory(loader=loader, variable_manager=variable_manager) #, host_list=options.inventory)
+    if hasattr(options, 'inventory'):
+        inventory = Inventory(loader=loader, variable_manager=variable_manager, host_list=options.inventory)
+    else:
+        inventory = Inventory(loader=loader, variable_manager=variable_manager)
+
     variable_manager.set_inventory(inventory)
     hosts = inventory.list_hosts(pattern)
+
+    if not hosts:
+        hosts = inventory.list_hosts('*' + pattern + '*')
 
     if not hosts:
         print("No hosts found!")
@@ -44,10 +53,10 @@ def main(argv):
     if len(hosts) != 1:
         print("Your host pattern matched %d hosts" % len(hosts))
         for i, host in enumerate(hosts):
-            print("{:>4}".format(i), host)
+            print("{:>4}".format(i+1), host, host.groups)
         number = raw_input("Host to connect to (default: random): ")
         try:
-            number = int(number)
+            number = int(number)-1
         except ValueError:
             number = 0
             print("Selected host: ", hosts[number])
@@ -66,14 +75,21 @@ def main(argv):
         and host.vars['ansible_ssh_port'] is not None):
         ssh_args += ("-o", "Port={0}".format(host.vars['ansible_ssh_port']))
 
-    if ('ansible_ssh_user' in host.vars
+    if options.login_name:
+        ssh_args += ("-o", "User={0}".format(options.login_name))
+    elif ('ansible_ssh_user' in host.vars
         and host.vars['ansible_ssh_user'] is not None):
         ssh_args += ("-o", "User={0}".format(host.vars['ansible_ssh_user']))
 
-    ssh_args.append(host.vars.get('ansible_ssh_host'))
+    ssh_host = host.vars.get('ansible_ssh_host')
 
+    if ssh_host:
+        ssh_args.append(ssh_host)
+    else:
+        ssh_args.append(str(host))
+    print(" ".join(ssh_args))
     # Launch ssh
-    os.execl('/usr/bin/ssh', *ssh_args)
+    print(os.execl('/usr/bin/ssh', *ssh_args))
 
 if __name__=='__main__':
     main(sys.argv)
